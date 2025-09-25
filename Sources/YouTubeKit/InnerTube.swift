@@ -48,7 +48,7 @@ class InnerTube {
     }
     
     // overview of clients: https://github.com/zerodytrash/YouTube-Internal-Clients
-    private let defaultClients = [
+    static private let defaultClients = [
         ClientType.web: Client(name: "WEB", version: "2.20250312.04.00", screen: nil, apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8", internalID: 1, userAgent: "Mozilla/5.0"),
         ClientType.webSafari: Client(name: "WEB", version: "2.20250312.04.00", screen: nil, apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8", internalID: 1, userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.5 Safari/605.1.15,gzip(gfe)"),
         ClientType.android: Client(name: "ANDROID", version: "20.10.38", screen: nil, apiKey: "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w", internalID: 3, userAgent: "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip", playerParams: "CgIQBg==", androidSdkVersion: 30),
@@ -64,9 +64,24 @@ class InnerTube {
         ClientType.mediaConnectFrontend: Client(name: "MEDIA_CONNECT_FRONTEND", version: "0.1", screen: nil, apiKey: "", internalID: 0, userAgent: nil),
         ClientType.mWeb: Client(name: "MWEB", version: "2.20250311.03.00", screen: nil, apiKey: "", internalID: 2, userAgent: nil)
     ]
-    
-    enum ClientType: String {
+    public enum ClientType: String, CaseIterable {
         case web, webSafari, android, androidMusic, androidVR, webEmbed, webCreator, androidEmbed, tv, tvEmbed, ios, iosMusic, mediaConnectFrontend, mWeb
+        
+        /// Get headers required for this client type
+        public var headers: [String: String] {
+            guard let client = InnerTube.defaultClients[self] else {
+                return [:]
+            }
+            return client.headers
+        }
+        
+        /// Get client configuration details
+        public var clientInfo: (name: String, version: String, internalID: Int) {
+            guard let client = InnerTube.defaultClients[self] else {
+                return ("", "", 0)
+            }
+            return (client.name, client.version, client.internalID)
+        }
     }
     
     private var accessToken: String?
@@ -86,10 +101,10 @@ class InnerTube {
     private let baseURL = "https://www.youtube.com/youtubei/v1"
     
     init(client: ClientType = .ios, signatureTimestamp: Int?, ytcfg: Extraction.YtCfg, useOAuth: Bool = false, allowCache: Bool = true) {
-        self.context = defaultClients[client]!.context
-        self.apiKey = defaultClients[client]!.apiKey
-        self.headers = defaultClients[client]!.headers
-        self.playerParams = defaultClients[client]!.playerParams
+        self.context = InnerTube.defaultClients[client]!.context
+        self.apiKey = InnerTube.defaultClients[client]!.apiKey
+        self.headers = InnerTube.defaultClients[client]!.headers
+        self.playerParams = InnerTube.defaultClients[client]!.playerParams
         self.signatureTimestamp = signatureTimestamp
         self.ytcfg = ytcfg
         self.useOAuth = useOAuth

@@ -237,7 +237,7 @@ public class YouTube {
                     var streams = [Stream]()
                     var existingITags = Set<Int>()
                     
-                    func process(streamingData: InnerTube.StreamingData, videoInfo: InnerTube.VideoInfo) async throws {
+                    func process(streamingData: InnerTube.StreamingData, videoInfo: InnerTube.VideoInfo, client: InnerTube.ClientType) async throws {
                         
                         var streamManifest = Extraction.applyDescrambler(streamData: streamingData)
                         
@@ -255,7 +255,9 @@ public class YouTube {
                         // filter out dubbed audio tracks
                         streamManifest = Extraction.filterOutDubbedAudio(streamManifest: streamManifest)
                         
-                        let newStreams = streamManifest.compactMap { try? Stream(format: $0) }
+                        let newStreams = streamManifest.compactMap { format in
+                            try? Stream(format: format, client: client)
+                        }
                         
                         // make sure only one stream per itag exists
                         for stream in newStreams {
@@ -265,15 +267,19 @@ public class YouTube {
                         }
                     }
                     
-                    for (streamingData, videoInfo) in zip(allStreamingData, videoInfos) {
-                        try await process(streamingData: streamingData, videoInfo: videoInfo)
+                    // Process streams from each client with client context
+                    let innertubeClients: [InnerTube.ClientType] = [.tv, .ios, .web]
+                    
+                    for (index, (streamingData, videoInfo)) in zip(allStreamingData, videoInfos).enumerated() {
+                        let client = index < innertubeClients.count ? innertubeClients[index] : .ios
+                        try await process(streamingData: streamingData, videoInfo: videoInfo, client: client)
                     }
                     
                     // if no progressive (audio+video) tracks were found, try to do one more call to maybe get them
                     if !streams.contains(where: { $0.includesVideoAndAudioTrack }) {
                         if let videoInfo = try? await loadAdditionalVideoInfos(forClient: .mediaConnectFrontend), let streamingData = videoInfo.streamingData {
                             os_log("Found no progressive streams. Called mediaConnectFrontend client to get additional video infos", log: log, type: .info)
-                            try await process(streamingData: streamingData, videoInfo: videoInfo)
+                            try await process(streamingData: streamingData, videoInfo: videoInfo, client: .mediaConnectFrontend)
                         }
                     }
                     
@@ -337,12 +343,9 @@ public class YouTube {
             
             // try extracting video infos from watch html directly as well
             let watchVideoInfoTask = Task<InnerTube.VideoInfo?, Never> { [log] in
-                do {
-                    return nil //try await Extraction.getVideoInfo(fromHTML: watchHTML)  // (temporarily disabled)
-                } catch let error {
-                    os_log("Couldn't extract video info from main watch html: %{public}@", log: log, type: .debug, error.localizedDescription)
-                    return nil
-                }
+                // Extraction from watch HTML temporarily disabled.
+                // If re-enabling, wrap the call in do/catch and log failures.
+                return nil
             }
 
             let signatureTimestamp = try await signatureTimestamp

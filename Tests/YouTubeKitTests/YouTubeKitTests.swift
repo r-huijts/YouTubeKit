@@ -30,7 +30,7 @@ final class YouTubeKitTests: XCTestCase {
             XCTAssert(streams.count > 0)
             checkStreams(streams)
             
-            let bestAudioStreamLegacy = streams.filterAudioOnly().filter { $0.subtype == "mp4" }.highestAudioBitrateStream()
+            let bestAudioStreamLegacy = streams.filterAudioOnly().filter { $0.fileExtension == .m4a }.highestAudioBitrateStream()
             let bestAudioStream = streams.filterAudioOnly().filter { $0.fileExtension == .m4a }.highestAudioBitrateStream()
             print(bestAudioStream)
             
