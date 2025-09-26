@@ -44,7 +44,7 @@ class Extraction {
         // Multiple patterns for different YouTube page formats
         let jsURLPatterns = [
             NSRegularExpression(#"(/s/player/[\w\d]+/[\w\d_/.]+/base\.js)"#),
-            NSRegularExpression(#"(\"player_base_url\":\s*\"([^\"]+)\""#),
+            NSRegularExpression(#"("player_base_url":\s*"([^"]+)"#),
             NSRegularExpression(#"(/s/player/[\w\d]+/[\w\d_/.]+/base\.js)"#),
             NSRegularExpression(#"(https://www\.youtube\.com/s/player/[\w\d]+/[\w\d_/.]+/base\.js)"#),
             NSRegularExpression(#"(/s/player/[\w\d]+/player_ias\.vflset/[\w\d_]+/base\.js)"#)
@@ -105,7 +105,7 @@ class Extraction {
         }
 
         let setConfigPatterns = [
-            NSRegularExpression(#"yt\.setConfig\(.*['\"]PLAYER_CONFIG['\"]:\s*"#)
+            NSRegularExpression(#"yt\.setConfig\(.*['"]PLAYER_CONFIG['"]:\s*"#)
         ]
 
         for pattern in setConfigPatterns {
@@ -433,7 +433,7 @@ class Extraction {
     /// - parameter watchHTML: The html contents of the watch page
     class func initialPlayerResponse(watchHTML: String) throws -> InitialPlayerResponse {
         let patterns = [
-            NSRegularExpression(#"window\[['\"]ytInitialPlayerResponse['\"]]\s*=\s*"#),
+            NSRegularExpression(#"window\[['"]ytInitialPlayerResponse['"]]\s*=\s*"#),
             NSRegularExpression(#"ytInitialPlayerResponse\s*=\s*"#)
         ]
         for pattern in patterns {
@@ -552,7 +552,7 @@ class Extraction {
     /// mime type and codecs serialized together, and splits them into separate elements.
     /// _Example_: mimeTypeCodec(#"audio/webm; codecs="opus""#) -> ("audio/webm", ["opus"])
     class func mimeTypeCodec(_ mimeTypeCodec: String) throws -> (String, [String]) {
-        let regex = NSRegularExpression(#"(\w+\/\w+)\;\scodecs=\"([a-zA-Z-0-9.,\s]*)\""#)
+        let regex = NSRegularExpression(#"(\w+/\w+)\;\scodecs="([a-zA-Z-0-9.,\s]*)""#)
         if let mimeTypeResult = regex.firstMatch(in: mimeTypeCodec, group: 1),
            let codecsResult = regex.firstMatch(in: mimeTypeCodec, group: 2) {
             return (mimeTypeResult.content, codecsResult.content.split(separator: ",").map { String($0).strip(from: " ") })
