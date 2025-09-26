@@ -159,7 +159,7 @@ class Cipher {
     /// The "transform plan" is the functions that the ciphered signature is cycled through to obtain the actual signature.
     class func getRawTransformPlan(js: String) throws -> [String] {
         let name = try getInitialFunctionName(js: js)
-        let pattern = NSRegularExpression(NSRegularExpression.escapedPattern(for: name) + #"=function\(\w\)\{[a-z=\.\(\""\)]*;(.*);(?:.+)\}"#)
+        let pattern = NSRegularExpression(NSRegularExpression.escapedPattern(for: name) + #"=function\(\w\)\{[a-z=\.\(""\)]*;(.*);(?:.+)\}"#)
         os_log("getting transform plan", log: log, type: .debug)
         if let match = pattern.firstMatch(in: js, group: 1) {
             return match.content.components(separatedBy: ";")
