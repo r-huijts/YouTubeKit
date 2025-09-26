@@ -26,55 +26,88 @@ class Extraction {
     
     /// Get the base JavaScript url
     class func jsURL(html: String) throws -> String {
-        let baseURL = try (try? getYTPlayerConfig(html: html).assets?.js)
-                           ?? (try getYTPlayerJS(html: html))
+        // Try multiple methods to get the JS URL
+
+        // Method 1: Try the original PlayerConfig approach first
+        if let playerConfig = try? getYTPlayerConfig(html: html),
+           let jsPath = playerConfig.assets?.js {
+            return "https://youtube.com" + jsPath
+        }
+
+        // Method 2: Direct extraction from HTML
+        let baseURL = try getYTPlayerJS(html: html)
         return "https://youtube.com" + baseURL
     }
     
     /// Get the YouTube player base JavaScript path.
     class func getYTPlayerJS(html: String) throws -> String {
+        // Multiple patterns for different YouTube page formats
         let jsURLPatterns = [
-            NSRegularExpression(#"(/s/player/[\w\d]+/[\w\d_/.]+/base\.js)"#)
+            NSRegularExpression(#"(/s/player/[\w\d]+/[\w\d_/.]+/base\.js)"#),
+            NSRegularExpression(#"(\"player_base_url\":\s*\"([^\"]+)\""#),
+            NSRegularExpression(#"(/s/player/[\w\d]+/[\w\d_/.]+/base\.js)"#),
+            NSRegularExpression(#"(https://www\.youtube\.com/s/player/[\w\d]+/[\w\d_/.]+/base\.js)"#),
+            NSRegularExpression(#"(/s/player/[\w\d]+/player_ias\.vflset/[\w\d_]+/base\.js)"#)
         ]
-        
+
         for pattern in jsURLPatterns {
             if let match = pattern.firstMatch(in: html, group: 1) {
-                return match.content
+                let jsPath = match.content
+                // If it's already a full URL, return as is
+                if jsPath.starts(with: "http") {
+                    return jsPath
+                }
+                return jsPath
             }
         }
-        
+
         throw YouTubeKitError.regexMatchError
     }
     
     struct PlayerConfig: Decodable {
         let assets: Assets?
-        
+
         struct Assets: Decodable {
             let js: String?
+        }
+
+        // Convenience initializer for when assets is nil
+        init(assets: Assets? = nil) {
+            self.assets = assets
         }
     }
     
     /// Get the YouTube player configuration data from the watch/embed html
     class func getYTPlayerConfig(html: String) throws -> PlayerConfig {
         os_log("finding initial function name", log: log, type: .debug)
+        // Prioritize ytInitialPlayerResponse as it's the modern pattern
         let configPatterns = [
-            NSRegularExpression(#"ytplayer\.config\s*=\s*"#),
-            NSRegularExpression(#"ytInitialPlayerResponse\s*=\s*"#)
+            NSRegularExpression(#"ytInitialPlayerResponse\s*=\s*"#),
+            NSRegularExpression(#"ytplayer\.config\s*=\s*"#)
         ]
-        
+
         for pattern in configPatterns {
             do {
+                // Try to parse as ytInitialPlayerResponse structure first
+                if pattern.pattern.contains("ytInitialPlayerResponse") {
+                    _ = try parseForObject(InitialPlayerResponse.self, html: html, precedingRegex: pattern)
+                    // If we successfully parsed ytInitialPlayerResponse, return a PlayerConfig with nil assets
+                    // The JS URL will be extracted separately by the jsURL method
+                    return PlayerConfig(assets: nil)
+                }
+
+                // Fallback to original PlayerConfig parsing for ytplayer.config
                 return try parseForObject(PlayerConfig.self, html: html, precedingRegex: pattern)
             } catch let error {
                 os_log("pattern (%{public}@) failed: %{public}@", log: log, type: .debug, pattern.pattern, error.localizedDescription)
                 continue
             }
         }
-        
+
         let setConfigPatterns = [
             NSRegularExpression(#"yt\.setConfig\(.*['\"]PLAYER_CONFIG['\"]:\s*"#)
         ]
-        
+
         for pattern in setConfigPatterns {
             do {
                 return try parseForObject(PlayerConfig.self, html: html, precedingRegex: pattern)
@@ -82,14 +115,98 @@ class Extraction {
                 continue
             }
         }
-        
+
         throw YouTubeKitError.regexMatchError
     }
     
     /// Tries to find video info in watch html directly
     class func getVideoInfo(fromHTML html: String) throws -> InnerTube.VideoInfo {
         let pattern = NSRegularExpression(#"ytInitialPlayerResponse\s*=\s*"#)
-        return try parseForObject(InnerTube.VideoInfo.self, html: html, precedingRegex: pattern)
+        do {
+            return try parseForObject(InnerTube.VideoInfo.self, html: html, precedingRegex: pattern)
+        } catch {
+            // If parsing as InnerTube.VideoInfo fails, try parsing as InitialPlayerResponse and convert
+            let response = try parseForObject(InitialPlayerResponse.self, html: html, precedingRegex: pattern)
+
+            // Convert InitialPlayerResponse to InnerTube.VideoInfo
+            return InnerTube.VideoInfo(
+                playabilityStatus: response.playabilityStatus.map { playability in
+                    InnerTube.VideoInfo.PlayabilityStatus(
+                        status: playability.status?.rawValue,
+                        reason: playability.reason
+                    )
+                },
+                streamingData: response.streamingData.map { streaming in
+                    InnerTube.StreamingData(
+                        expiresInSeconds: nil,
+                        formats: streaming.formats?.compactMap { format in
+                            InnerTube.StreamingData.Format(
+                                itag: format.itag ?? 0,
+                                url: format.url,
+                                mimeType: format.mimeType ?? "",
+                                bitrate: nil,
+                                width: nil,
+                                height: nil,
+                                lastModified: nil,
+                                contentLength: nil,
+                                quality: format.quality ?? "",
+                                fps: nil,
+                                qualityLabel: nil,
+                                averageBitrate: nil,
+                                audioQuality: nil,
+                                approxDurationMs: nil,
+                                audioSampleRate: nil,
+                                audioChannels: nil,
+                                audioTrack: nil,
+                                signatureCipher: nil,
+                                s: nil
+                            )
+                        },
+                        adaptiveFormats: streaming.adaptiveFormats?.compactMap { format in
+                            InnerTube.StreamingData.Format(
+                                itag: format.itag ?? 0,
+                                url: format.url,
+                                mimeType: format.mimeType ?? "",
+                                bitrate: nil,
+                                width: nil,
+                                height: nil,
+                                lastModified: nil,
+                                contentLength: nil,
+                                quality: format.quality ?? "",
+                                fps: nil,
+                                qualityLabel: nil,
+                                averageBitrate: nil,
+                                audioQuality: nil,
+                                approxDurationMs: nil,
+                                audioSampleRate: nil,
+                                audioChannels: nil,
+                                audioTrack: nil,
+                                signatureCipher: nil,
+                                s: nil
+                            )
+                        },
+                        onesieStreamingUrl: nil,
+                        hlsManifestUrl: nil
+                    )
+                },
+                videoDetails: response.videoDetails.map { details in
+                    InnerTube.VideoInfo.VideoDetails(
+                        videoId: details.videoId ?? "",
+                        title: details.title ?? "",
+                        shortDescription: nil,
+                        thumbnail: InnerTube.VideoInfo.VideoDetails.Thumbnail(
+                            thumbnails: [
+                                InnerTube.VideoInfo.VideoDetails.Thumbnail.ThumbnailMetadata(
+                                    url: URL(string: "https://i.ytimg.com/vi/\(details.videoId ?? "")/maxresdefault.jpg") ?? URL(string: "https://example.com")!,
+                                    width: 1280,
+                                    height: 720
+                                )
+                            ]
+                        )
+                    )
+                }
+            )
+        }
     }
     
     /// Return the playability status and status explanation of the video
@@ -266,7 +383,9 @@ class Extraction {
     
     struct InitialPlayerResponse: Decodable {
         let playabilityStatus: PlayabilityStatus?
-        
+        let streamingData: StreamingData?
+        let videoDetails: VideoDetails?
+
         struct PlayabilityStatus: Decodable {
             let status: Status?
             let reason: String?
@@ -285,6 +404,25 @@ class Extraction {
                 let videoId: String?
                 let broadcastId: Int?
                 let pillDelayMs: Int?
+            }
+        }
+
+        struct VideoDetails: Decodable {
+            let videoId: String?
+            let title: String?
+            let lengthSeconds: String?
+            let viewCount: String?
+        }
+
+        struct StreamingData: Decodable {
+            let formats: [Format]?
+            let adaptiveFormats: [Format]?
+
+            struct Format: Decodable {
+                let itag: Int?
+                let url: String?
+                let mimeType: String?
+                let quality: String?
             }
         }
     }
@@ -367,16 +505,10 @@ class Extraction {
                 if !signatureFound {
                     
                     // apply "s" signature
-                    if let cipheredSignature = stream.s {
+                    if stream.s != nil {
                         // Remove the stream from `streamManifest` for now, as signature extraction currently doesn't work most of time
                         invalidStreamIndices.append(i)
                         continue // Skip the rest of the code as we are removing this stream
-                        
-                        let signature = try cipher.value.getSignature(cipheredSignature: cipheredSignature)
-                        
-                        os_log("finished descrambling signature for itag=%{public}i", log: log, type: .debug, stream.itag)
-                        
-                        urlComponents.queryItems?["sig"] = signature
                     }
                     
                 } else {
