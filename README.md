@@ -6,6 +6,13 @@ This package allows to extract the direct video url or audio url for any YouTube
 
 The structurce of the code is strongly aligned with the [pytube project](https://github.com/pytube/pytube) (written in Python). This should make future breaking changes (by the YouTube API) easier to fix.
 
+## Features
+
+- **Multi-Client Support**: Automatically uses multiple InnerTube clients (TV, iOS, Web) for enhanced compatibility and better stream extraction
+- **Client Context Tracking**: Each stream includes information about which client extracted it and the required headers for playback
+- **Automatic Fallback**: Falls back to additional clients when progressive streams aren't available
+- **Remote Extraction**: Optional remote server fallback for when local extraction fails
+
 ## Compatibility
 It requires iOS 13, watchOS 6, tvOS 13 or macOS 10.15, since it's relying on the Swift 5.5 Concurrency module. visionOS is also supported.
 
@@ -26,7 +33,7 @@ let video = YouTube(videoID: videoID)
 ```swift
 let streams = try await video.streams
 ```
-This will return an array of `Stream` objects.
+This will return an array of `Stream` objects. YouTubeKit now automatically uses multiple InnerTube clients (TV, iOS, Web) to extract streams, providing better compatibility and fallback options.
 
 
 3. Filter for the stream you want by using a normal filter or with provided helper functions like:
@@ -40,6 +47,27 @@ let highestAudioBitrate = streams.highestAudioBitrateStream()
 let audioOnlyStreams = streams.filterAudioOnly()  // all streams without video track
 let videoOnlyStreams = streams.filterVideoOnly()  // all streams without audio track
 let combinedStreams = streams.filterVideoAndAudio()  // all streams with both video and audio track
+```
+
+### Client Context and Headers
+
+Each stream now includes client context information, which provides the necessary headers for proper playback authentication. Streams extracted from different clients may require specific headers:
+
+```swift
+// Get playback headers for a stream
+let stream = streams.highestResolutionStream()!
+let headers = stream.playbackHeaders
+
+// Check which client extracted the stream
+print("Extracted by: \(stream.clientDescription)")
+
+// Check if client headers are required
+if stream.requiresClientHeaders {
+    print("This stream requires client-specific headers for playback")
+}
+
+// Get the client name
+print("Client: \(stream.clientName)")
 ```
 
 4. Retrieve metadata:
@@ -58,10 +86,27 @@ let stream = try await YouTube(videoID: "QdBZY2fkU-0").streams
                           .filter { $0.isNativelyPlayable }
                           .highestResolutionStream()
 
-let player = AVPlayer(url: stream!.url)
+if let stream = stream {
+    // Use client headers if required for proper playback
+    if stream.requiresClientHeaders {
+        let playerItem = AVPlayerItem(url: stream.url)
+        let headers = stream.playbackHeaders
+
+        // Add headers to the player item
+        for (key, value) in headers {
+            playerItem.addObserver(forKeyPath: "status", options: [], context: nil)
+            // Note: In a real implementation, you'd need to use custom URL loading
+            // or modify the AVAsset resource loader to include these headers
+        }
+
+        let player = AVPlayer(playerItem: playerItem)
+    } else {
+        let player = AVPlayer(url: stream.url)
+    }
+}
 // -> Now present the player however you like
 ```
-The `isNativelyPlayable` parameter is used to filter only streams that are natively decodable on the current operating system and device.
+The `isNativelyPlayable` parameter is used to filter only streams that are natively decodable on the current operating system and device. Some streams may require client-specific headers for proper playback authentication.
 
 
 ### Example 2
